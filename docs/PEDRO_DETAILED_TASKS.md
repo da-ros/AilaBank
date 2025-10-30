@@ -4,6 +4,7 @@
 **Last Updated**: October 30, 2025  
 **Target**: AI Agents on Arc with USDC Hackathon (Submission: Nov 8)  
 **Your Role**: AI Intent Engine, Backend Orchestrator, Circle Integration, Audit System
+> Voice UX responsibility moved here: Pedro owns the full voice stack (STT, intent, TTS, and the frontend Voice Interface component).
 
 ---
 
@@ -67,6 +68,13 @@ All new endpoints should be prefixed under `/api/v1/` and emit structured audit 
 - Intent orchestrator service with action builder (deposit/withdraw/transfer/allocate)
 - Explanation service (concise responses for TTS)
 - Confidence thresholds + safe defaults
+
+- Voice UX (Frontend + APIs) (Days 2–3)
+- Build `frontend/src/components/VoiceInterface.tsx` (owned here)
+- Recording, STT request to Workers AI, submit intent to `/api/v1/intent`
+- TTS playback from ElevenLabs; error handling, retries, timeouts
+- Multilingual support (locale switching, voice selection via API)
+- Command set coverage: deposit, withdraw, transfer, invoice, subscription, policy edits
 
 3) Circle + Wallets (Days 2–3)
 - Developer-controlled wallet creation and balances

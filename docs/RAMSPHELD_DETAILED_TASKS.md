@@ -49,6 +49,7 @@
 
 Frontend/web3
 - Add UI surfacing receipt hashes, allocation splits, and buffer health; expose helper formatters for Florence
+  (Voice UX handled by Pedro; ensure hooks/components expose data needed by Pedro’s `VoiceInterface`.)
 
 ---
 

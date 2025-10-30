@@ -3,7 +3,7 @@
 
 **Last Updated**: October 30, 2025  
 **Target**: AI Agents on Arc with USDC Hackathon (Submission: Nov 8)  
-**Your Role**: Frontend UX/UI, Smart Contract Co-Development, Voice Interface Design, Demo Production
+**Your Role**: Frontend UX/UI, Smart Contract Co-Development, Demo Production
 
 ---
 
@@ -14,7 +14,6 @@
 | **Contract Co-Development** | 8 tasks | 2-3 days | 🔴 Critical |
 | **Design System** | 5 tasks | 1 day | 🟡 High |
 | **Core Components** | 12 tasks | 3 days | 🔴 Critical |
-| **Voice UX** | 6 tasks | 2 days | 🔴 Critical |
 | **Localization** | 4 tasks | 1 day | 🟡 High |
 | **Demo Production** | 6 tasks | 2 days | 🔴 Critical |
 | **Polish & Testing** | 5 tasks | 1 day | 🟡 High |
@@ -25,10 +24,10 @@
 
 ## 🔵 Updated Focus Areas (Blue Ocean Features)
 
-1. Voice‑native banking flows (multilingual)
-   - RateSweep commands: “Move 35% of idle cash to safest yield; keep $1k liquid; pay rent on the 1st.”
-   - Cross‑border: “Send €200 to Kenya via fastest route; show fees.”
-   - Merchant: “Create monthly invoice for $49; send link; auto‑collect.”
+1. Action affordances for key flows (non‑voice)
+   - Quick actions for RateSweep adjustments (policy sliders/buttons)
+   - Cross‑border send flow with guided steps and validation
+   - Merchant invoice/subscription creation with templates
 
 2. Cross‑border remittance optimizer (UX)
    - Quote comparison UI: cheapest/fastest + reliability score, proof‑of‑best‑execution drawer
@@ -67,9 +66,9 @@ Deliverables will be reflected in components and pages within `frontend/src/comp
 - `YieldStats.tsx` with allocation split (buffer vs yield), APY estimate
 - Real-time refresh + event-driven updates (Indexer)
 
-4) Voice-Native UX (Days 3–4)
-- `VoiceInterface.tsx`: STT → intent → TTS loop
-- Voice command shortcuts (deposit, withdraw, send, invoice, policy changes)
+4) Transaction and Intent UX (Days 3–4)
+- Command palette / quick actions (keyboard + UI), no microphone
+- Clear confirmations and human‑readable reasoning returned from API
 - Multilingual support (copy + locale switching)
 
 5) Cross-Border Remittance Optimizer (Days 4–5)
@@ -99,7 +98,7 @@ Deliverables will be reflected in components and pages within `frontend/src/comp
 - Error boundaries, loading skeletons, optimistic toasts
 
 10) Demo Experience (Day 9)
-- Scripted flows: Grace deposit, cross-border send, merchant payment, policy tweak
+- Scripted flows: Grace deposit, cross-border send, merchant payment, policy tweak (voice handled by Pedro’s component)
 - Hotkeys and safe demo data toggles
 - Screenshots and short screen-capture snippets for README/deck
 
@@ -109,7 +108,7 @@ This includes:
 - Smart contract testing from UX perspective
 - Complete design system with Tailwind config
 - Reusable component library
-- Voice interface with Web Speech API
+-- Voice interface owned and shipped by Pedro (see Pedro doc)
 - Transaction history with filters
 - Balance visualization
 - Localization setup
