@@ -17,6 +17,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "AilaBank - AI-Powered Stablecoin Banking",
   description: "Voice-first banking with auto-yield and instant liquidity on Arc Testnet",
+  icons: {
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 
 export default function RootLayout({
