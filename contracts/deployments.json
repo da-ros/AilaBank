@@ -1,0 +1,16 @@
+{
+  "network": "arc-testnet",
+  "timestamp": "2025-11-03T08:06:43.202Z",
+  "deployer": "0x41757Ca745F2aBA83e9F4080C6f32c092E182d65",
+  "contracts": {
+    "ailaVault": "0x77348b340c5A7431D191f85603f738E21691Df3a",
+    "liquidityBuffer": "0x912682Ed882FA6A35ADc8Fd467AB481886e7074b",
+    "yieldAllocator": "0x1a578559469419C59Ae0cFdE434C2AB2c2688eB3",
+    "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  },
+  "transactionHashes": {
+    "vault": "0x9fef51d066d96886c1c84cee9fb7e4ae20a984baabc0a19fc6ac8f565b61a516",
+    "buffer": "0xbb9c0bdf673ca98821c6b3e59a4af9eb0156f667c0c8bfc1044098c630e8893e",
+    "allocator": "0x5e6c995829ae933c40d6a13da6140391ff2b3d12847256d1a447da3c0b6f399d"
+  }
+}

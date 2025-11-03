@@ -2,6 +2,10 @@ import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "dotenv/config";
 
+// Validate private key format
+const privateKey = process.env.PRIVATE_KEY || "";
+const accounts = privateKey && privateKey.length === 66 ? [privateKey] : [];
+
 const config: HardhatUserConfig = {
   solidity: {
     version: "0.8.20",
@@ -16,14 +20,10 @@ const config: HardhatUserConfig = {
     hardhat: {
       chainId: 31337,
     },
-    arcTestnet: {
-      url: process.env.ARC_RPC_URL || "https://testnet.arc.network/rpc",
-      chainId: parseInt(process.env.ARC_CHAIN_ID || "12345"),
-      accounts: process.env.PRIVATE_KEY && process.env.PRIVATE_KEY.length === 66 
-        ? [process.env.PRIVATE_KEY] 
-        : [],
-      gas: 2100000,
-      gasPrice: 8000000000,
+    arc: {
+      url: process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.network",
+      accounts: accounts,
+      // chainId will be auto-detected from the network
     },
   },
   paths: {
