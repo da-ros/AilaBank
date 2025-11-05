@@ -1,0 +1,61 @@
+{
+  "name": "ailabank-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:intent": "ts-node test/intent-test.ts",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "keywords": [
+    "ailabank",
+    "ai",
+    "defi",
+    "usdc"
+  ],
+  "author": "Pedro",
+  "license": "MIT",
+  "description": "AilaBank Backend Orchestrator & AI Engine",
+  "dependencies": {
+    "@circle-fin/circle-sdk": "^2.9.0",
+    "@circle-fin/developer-controlled-wallets": "^9.2.1",
+    "@supabase/supabase-js": "^2.78.0",
+    "@types/multer": "^2.0.0",
+    "@types/uuid": "^10.0.0",
+    "axios": "^1.13.1",
+    "bullmq": "^5.62.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.15.0",
+    "express": "^5.1.0",
+    "ioredis": "^5.8.2",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "openai": "^6.7.0",
+    "redis": "^5.9.0",
+    "uuid": "^13.0.0",
+    "winston": "^3.18.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
+    "@types/jest": "^30.0.0",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^24.9.2",
+    "@types/supertest": "^6.0.3",
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.10",
+    "supertest": "^7.1.4",
+    "ts-jest": "^29.4.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

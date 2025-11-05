@@ -307,7 +307,7 @@ provider.on('block', (blockNumber) => {
 **Setup**:
 1. Create Cloudflare Worker script (`indexer/workers/intent-parser.ts`)
 2. Deploy to Cloudflare Workers
-3. Use Whisper model for STT (speech-to-text)
+3. Use Whisper Large v3 Turbo for STT (speech-to-text)
 
 **File: `indexer/workers/intent-parser.ts`**
 ```typescript
@@ -321,7 +321,7 @@ export default {
     if (request.headers.get('content-type') === 'audio/wav') {
       const buffer = await request.arrayBuffer();
       
-      const response = await ai.run('@cf/openai/whisper', {
+      const response = await ai.run('@cf/openai/whisper-large-v3-turbo', {
         audio: Array.from(new Uint8Array(buffer))
       });
       
