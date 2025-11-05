@@ -262,7 +262,7 @@ Grace: "Deposit 100 euros"
            ▼ (HTTPS)
 ┌──────────────────────────────────────────┐
 │ Cloudflare Workers AI                    │ (Edge)
-│ Model: Whisper STT                       │
+│ Model: Whisper Large v3 Turbo (STT)      │
 │ Input: Audio blob                        │
 │ Output: "Deposit 100 euros"              │
 │         confidence: 0.95                 │

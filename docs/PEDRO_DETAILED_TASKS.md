@@ -464,7 +464,7 @@ export class CloudflareAIService {
   async speechToText(audioBuffer: Buffer): Promise<STTResponse> {
     try {
       const response = await axios.post(
-        `${this.baseURL}/@cf/openai/whisper`,
+        `${this.baseURL}/@cf/openai/whisper-large-v3-turbo`,
         audioBuffer,
         {
           headers: {

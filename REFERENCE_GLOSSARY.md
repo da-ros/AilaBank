@@ -37,7 +37,7 @@
 | **Confidence** | ML model certainty (0–1) | Intent parsing accuracy |
 | **NLU** | Natural Language Understanding | LLM parsing voice commands |
 | **Agent** | Autonomous AI system | Aila (your assistant) |
-| **Model** | Trained AI system | Whisper (STT), LLaMA (reasoning) |
+| **Model** | Trained AI system | Whisper Large v3 Turbo (STT), GPT-5-nano (intent) |
 
 ### Development
 | Term | Definition | AilaBank Use |
@@ -120,10 +120,10 @@ Arc (EVM Layer-1)
 ### AI/Voice
 ```
 Cloudflare Workers AI
-├── Model: Whisper (STT)
+├── Model: Whisper Large v3 Turbo (STT)
 ├── Deployment: Edge (low latency)
 ├── Free Tier: Generous
-└── Alternative: OpenAI Whisper API
+└── Alternative: OpenAI Whisper (if not using Cloudflare Workers AI)
 
 ElevenLabs
 ├── Model: TTS (Text-to-Speech)
