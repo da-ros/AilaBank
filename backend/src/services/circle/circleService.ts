@@ -8,6 +8,7 @@ import {
 } from '@circle-fin/developer-controlled-wallets';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
+import axios from 'axios';
 import { supabase } from '../../db/supabase';
 
 /**
@@ -17,7 +18,7 @@ import { supabase } from '../../db/supabase';
 
 interface CreateWalletRequest {
   userId: string;
-  address: string;
+  address?: string; // Optional - Circle generates the wallet address
 }
 
 interface TransferToArcRequest {
@@ -38,6 +39,7 @@ export class CircleService {
   private walletAccountType: CircleAccountType;
   private walletCount: number;
   private dcWalletClient: CircleDeveloperControlledWalletsClient;
+  private entityPublicKey?: string; // Cached public key from .env or API
 
   constructor() {
     const apiKey = process.env.CIRCLE_API_KEY;
@@ -56,19 +58,29 @@ export class CircleService {
     }
 
     // Determine environment from API key prefix or CIRCLE_BASE_URL
-    const keyPrefix = parts[0].toUpperCase();
-    if (keyPrefix === 'TEST_API_KEY' || keyPrefix === 'SANDBOX_API_KEY') {
-      this.environment = 'sandbox';
-      this.baseUrl = 'https://api-sandbox.circle.com';
-    } else if (keyPrefix === 'LIVE_API_KEY' || keyPrefix === 'PRODUCTION_API_KEY') {
-      this.environment = 'production';
-      this.baseUrl = 'https://api.circle.com';
+    // Allow override via CIRCLE_BASE_URL env var (for testing with production URL)
+    const baseUrlOverride = process.env.CIRCLE_BASE_URL;
+    
+    if (baseUrlOverride) {
+      // Explicit override from .env
+      this.baseUrl = baseUrlOverride;
+      this.environment = baseUrlOverride.includes('sandbox') ? 'sandbox' : 'production';
+      console.log(`⚠️  Using CIRCLE_BASE_URL override: ${this.baseUrl}`);
     } else {
-      // Fallback to CIRCLE_BASE_URL
-      const baseUrl = process.env.CIRCLE_BASE_URL || 'https://api-sandbox.circle.com';
-      this.baseUrl = baseUrl;
-      this.environment = baseUrl.includes('sandbox') ? 'sandbox' : 'production';
-      console.warn(`⚠️  Could not determine environment from API key prefix "${keyPrefix}", using ${this.environment} based on CIRCLE_BASE_URL`);
+      // Auto-detect from API key prefix
+      const keyPrefix = parts[0].toUpperCase();
+      if (keyPrefix === 'TEST_API_KEY' || keyPrefix === 'SANDBOX_API_KEY') {
+        this.environment = 'sandbox';
+        this.baseUrl = 'https://api-sandbox.circle.com';
+      } else if (keyPrefix === 'LIVE_API_KEY' || keyPrefix === 'PRODUCTION_API_KEY') {
+        this.environment = 'production';
+        this.baseUrl = 'https://api.circle.com';
+      } else {
+        // Default to sandbox for safety
+        this.baseUrl = 'https://api-sandbox.circle.com';
+        this.environment = 'sandbox';
+        console.warn(`⚠️  Could not determine environment from API key prefix "${keyPrefix}", defaulting to sandbox`);
+      }
     }
 
     this.client = new Circle(
@@ -129,6 +141,15 @@ export class CircleService {
     }
 
     this.entitySecret = entitySecret;
+
+    // Load entity public key from .env if available (avoids API calls)
+    const entityPublicKey = process.env.CIRCLE_ENTITY_PUBLIC_KEY;
+    if (entityPublicKey) {
+      this.entityPublicKey = entityPublicKey;
+      console.log('✅ Using CIRCLE_ENTITY_PUBLIC_KEY from .env (skipping API call)');
+    } else {
+      console.log('⚠️  CIRCLE_ENTITY_PUBLIC_KEY not set in .env - will fetch from API when needed');
+    }
 
     // Log a warning if ciphertext is also set (it's not used by SDK)
     if (entitySecretCiphertext) {
@@ -270,33 +291,28 @@ export class CircleService {
   }
 
   /**
-   * Get public key for entity secret
-   * This is useful for verifying entity secret registration and SDK connection
+   * Generate a fresh entity secret ciphertext
+   * This is useful for debugging or if you need to manually generate ciphertext
+   * Note: The SDK should automatically generate fresh ciphertexts for each API request
    * 
    * Reference: https://developers.circle.com/wallets/dev-controlled/register-entity-secret
    */
-  public async getPublicKey(): Promise<any> {
+  public async generateEntitySecretCiphertext(): Promise<string> {
     try {
-      console.log('🔑 Fetching Circle entity public key...');
+      console.log('🔐 Generating fresh entity secret ciphertext...');
       
-      const response = await this.dcWalletClient.getPublicKey();
-
-      const publicKey = response.data?.publicKey;
-      if (!publicKey) {
-        throw new Error('Public key not found in response');
-      }
-
-      console.log('✅ Public key fetched successfully');
-      console.log(`   Public Key (first 50 chars): ${publicKey.substring(0, 50)}...`);
-
-      return {
-        publicKey,
-        message: 'Public key fetched successfully. This confirms your entity secret is registered and SDK is working.',
-      };
+      const ciphertext = await this.dcWalletClient.generateEntitySecretCiphertext();
+      
+      console.log('✅ Ciphertext generated successfully');
+      console.log(`   Length: ${ciphertext.length} characters`);
+      console.log(`   First 50 chars: ${ciphertext.substring(0, 50)}...`);
+      console.log('   ⚠️  Note: This ciphertext should only be used once per API request');
+      
+      return ciphertext;
     } catch (error: any) {
       const errorDetails = error.response?.data || error.message;
       const errorMessage = errorDetails?.message || errorDetails;
-      console.error('❌ Failed to fetch public key:', errorMessage);
+      console.error('❌ Failed to generate ciphertext:', errorMessage);
 
       if (error.response?.status === 401) {
         throw new Error(
@@ -306,6 +322,174 @@ export class CircleService {
           `3. Environment matches (sandbox vs production)`
         );
       }
+
+      throw new Error(`Failed to generate ciphertext: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get public key for entity secret via direct API call
+   * This works even when the SDK fails
+   */
+  private async getPublicKeyViaAPI(): Promise<string> {
+    try {
+      console.log('🔑 Fetching Circle entity public key via direct API...');
+      
+      const url = `${this.baseUrl}/v1/w3s/config/entity/publicKey`;
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const publicKey = response.data?.data?.publicKey;
+      if (!publicKey) {
+        throw new Error('Public key not found in response');
+      }
+
+      console.log('✅ Public key fetched successfully via API');
+      return publicKey;
+    } catch (error: any) {
+      const errorDetails = error.response?.data || error.message;
+      const errorMessage = errorDetails?.message || errorDetails;
+      console.error('❌ Failed to fetch public key via API:', errorMessage);
+
+      if (error.response?.status === 401) {
+        throw new Error(
+          `Authentication failed (401) when fetching public key. Please verify:\n` +
+          `1. API key is correct and has Developer Services permissions\n` +
+          `2. Environment matches (sandbox vs production)`
+        );
+      }
+
+      throw new Error(`Failed to fetch public key via API: ${error.message}`);
+    }
+  }
+
+  /**
+   * Encrypt entity secret with RSA public key to generate ciphertext
+   * Uses Node.js built-in crypto module (RSA-OAEP with SHA-256)
+   */
+  private async encryptEntitySecret(publicKeyPem: string): Promise<string> {
+    try {
+      // Convert hex entity secret to Buffer
+      const entitySecretBuffer = Buffer.from(this.entitySecret!, 'hex');
+      
+      // Import the public key
+      const publicKey = crypto.createPublicKey(publicKeyPem);
+      
+      // Encrypt using RSA-OAEP with SHA-256
+      const encrypted = crypto.publicEncrypt(
+        {
+          key: publicKey,
+          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+          oaepHash: 'sha256',
+        },
+        entitySecretBuffer
+      );
+      
+      // Return Base64 encoded ciphertext
+      return encrypted.toString('base64');
+    } catch (error: any) {
+      console.error('❌ Failed to encrypt entity secret:', error.message);
+      throw new Error(`Failed to encrypt entity secret: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get public key (from .env or API)
+   */
+  private async getPublicKey(): Promise<string> {
+    // Use cached public key from .env if available
+    if (this.entityPublicKey) {
+      console.log('🔑 Using public key from .env (CIRCLE_ENTITY_PUBLIC_KEY)');
+      return this.entityPublicKey;
+    }
+
+    // Fallback to API call
+    console.log('🔑 Public key not in .env, fetching from API...');
+    const publicKey = await this.getPublicKeyViaAPI();
+    
+    // Cache it for future use
+    this.entityPublicKey = publicKey;
+    
+    return publicKey;
+  }
+
+  /**
+   * Generate a fresh entity secret ciphertext for API requests
+   * Uses public key from .env or fetches from API, then encrypts the entity secret
+   */
+  public async generateFreshCiphertext(): Promise<string> {
+    try {
+      console.log('🔐 Generating fresh entity secret ciphertext...');
+      
+      // Get public key (from .env or API)
+      const publicKey = await this.getPublicKey();
+      
+      // Encrypt entity secret
+      const ciphertext = await this.encryptEntitySecret(publicKey);
+      
+      console.log('✅ Fresh ciphertext generated');
+      console.log(`   Length: ${ciphertext.length} characters`);
+      
+      return ciphertext;
+    } catch (error: any) {
+      console.error('❌ Failed to generate ciphertext:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get public key for entity secret (for API responses)
+   * This is useful for verifying entity secret registration and SDK connection
+   * 
+   * Reference: https://developers.circle.com/wallets/dev-controlled/register-entity-secret
+   */
+  public async getPublicKeyForAPI(): Promise<any> {
+    try {
+      // First check if we have it in .env
+      if (this.entityPublicKey) {
+        return {
+          publicKey: this.entityPublicKey,
+          message: 'Public key from .env (CIRCLE_ENTITY_PUBLIC_KEY).',
+          source: 'env',
+        };
+      }
+
+      // Try SDK first, fallback to direct API
+      try {
+        console.log('🔑 Fetching Circle entity public key via SDK...');
+        const response = await this.dcWalletClient.getPublicKey();
+        const publicKey = response.data?.publicKey;
+        if (publicKey) {
+          console.log('✅ Public key fetched successfully via SDK');
+          // Cache it
+          this.entityPublicKey = publicKey;
+          return {
+            publicKey,
+            message: 'Public key fetched successfully. This confirms your entity secret is registered and SDK is working.',
+            source: 'sdk',
+          };
+        }
+      } catch (sdkError: any) {
+        console.warn('⚠️  SDK getPublicKey failed, trying direct API...');
+      }
+      
+      // Fallback to direct API
+      const publicKey = await this.getPublicKeyViaAPI();
+      // Cache it
+      this.entityPublicKey = publicKey;
+      return {
+        publicKey,
+        message: 'Public key fetched successfully via direct API.',
+        source: 'api',
+      };
+    } catch (error: any) {
+      const errorDetails = error.response?.data || error.message;
+      const errorMessage = errorDetails?.message || errorDetails;
+      console.error('❌ Failed to fetch public key:', errorMessage);
 
       throw new Error(`Failed to fetch public key: ${error.message}`);
     }
@@ -387,42 +571,254 @@ export class CircleService {
   }
 
   /**
+   * List wallets from Circle API
+   * Used to find existing wallets by address
+   * Uses the correct endpoint: /v1/w3s/wallets (not /v1/w3s/developer/wallets)
+   */
+  private async listWallets(walletSetId?: string): Promise<any[]> {
+    try {
+      console.log('🔍 Listing wallets from Circle...');
+      
+      const url = `${this.baseUrl}/v1/w3s/wallets`;
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const responseData = response.data;
+      const walletList = responseData?.wallets || responseData?.data?.wallets || [];
+      
+      // Filter by walletSetId if provided
+      let filteredWallets = Array.isArray(walletList) ? walletList : [];
+      if (walletSetId && filteredWallets.length > 0) {
+        const beforeCount = filteredWallets.length;
+        filteredWallets = filteredWallets.filter((w: any) => w.walletSetId === walletSetId);
+        console.log(`   Filtered from ${beforeCount} to ${filteredWallets.length} wallet(s) in wallet set ${walletSetId}`);
+      } else {
+        console.log(`   Found ${filteredWallets.length} wallet(s) total`);
+      }
+      
+      return filteredWallets;
+    } catch (error: any) {
+      console.error('❌ Failed to list wallets:', error.response?.data || error.message);
+      console.error('   This might mean:');
+      console.error('   1. API key doesn\'t have permissions to list wallets');
+      console.error('   2. The endpoint requires different authentication');
+      console.error('   3. Network or API issue');
+      // Don't throw - return empty array if listing fails
+      return [];
+    }
+  }
+
+  /**
+   * Find existing wallet by address
+   * Searches through all wallets in the wallet set
+   */
+  private async findWalletByAddress(address: string): Promise<any | null> {
+    try {
+      if (!address) return null;
+      
+      const normalizedAddress = address.toLowerCase().trim();
+      console.log(`🔍 Searching for existing wallet with address: ${address.substring(0, 10)}...`);
+      console.log(`   Normalized address: ${normalizedAddress.substring(0, 10)}...`);
+      
+      const walletSetId = await this.ensureWalletSet();
+      const wallets = await this.listWallets(walletSetId);
+      
+      console.log(`   Searching through ${wallets.length} wallet(s)...`);
+      
+      // Log all addresses for debugging
+      if (wallets.length > 0) {
+        console.log(`   Wallet addresses in set:`);
+        wallets.forEach((w: any, index: number) => {
+          console.log(`     ${index + 1}. ${w.address || 'N/A'} (ID: ${w.id})`);
+        });
+      }
+      
+      const foundWallet = wallets.find((w: any) => {
+        const walletAddress = w.address?.toLowerCase().trim();
+        const match = walletAddress === normalizedAddress;
+        if (match) {
+          console.log(`   ✅ Match found! Wallet ID: ${w.id}`);
+        }
+        return match;
+      });
+      
+      if (foundWallet) {
+        console.log(`✅ Found existing wallet: ${foundWallet.id}`);
+        console.log(`   Address: ${foundWallet.address}`);
+        return foundWallet;
+      }
+      
+      console.log(`ℹ️  No existing wallet found with address: ${address.substring(0, 10)}...`);
+      console.log(`   Note: If the wallet was created in Circle Console, it might be in a different wallet set`);
+      return null;
+    } catch (error: any) {
+      console.error('❌ Error searching for wallet by address:', error.message);
+      return null;
+    }
+  }
+
+  /**
    * Create developer-controlled wallet for user
+   * Uses direct API calls (not SDK) to ensure fresh ciphertexts
+   * If address is provided, checks if wallet already exists in Circle and links it
+   * Otherwise creates a new wallet
    * Stores wallet ID in Supabase users table
    */
   async createWallet(request: CreateWalletRequest): Promise<any> {
     try {
+      // First, check if user already has a wallet linked
+      const { data: user } = await supabase
+        .from('users')
+        .select('circle_wallet_id')
+        .eq('id', request.userId)
+        .single();
+
+      if (user?.circle_wallet_id) {
+        console.log(`ℹ️  User already has a wallet linked: ${user.circle_wallet_id}`);
+        console.log(`   Fetching wallet details...`);
+        try {
+          const existingWallet = await this.getWallet(user.circle_wallet_id);
+          console.log(`✅ Found existing linked wallet`);
+          return existingWallet;
+        } catch (error: any) {
+          console.warn(`⚠️  Linked wallet ${user.circle_wallet_id} not found in Circle, will create/link new one`);
+          // Continue to create/link logic below
+        }
+      }
+
+      // If address is provided, check if wallet already exists in Circle
+      if (request.address) {
+        console.log(`🔍 Checking if wallet with address ${request.address.substring(0, 10)}... already exists in Circle...`);
+        console.log(`   ⚠️  IMPORTANT: If wallet was created in Circle Console, make sure it's in the same wallet set!`);
+        console.log(`   Current Wallet Set ID: ${await this.ensureWalletSet()}`);
+        
+        const existingWallet = await this.findWalletByAddress(request.address);
+        
+        if (existingWallet) {
+          console.log(`✅ Found existing wallet! Linking to user ${request.userId}...`);
+          const walletId = existingWallet.id;
+          
+          // Update database with existing wallet ID and address
+          const { error: dbError } = await supabase
+            .from('users')
+            .update({ 
+              circle_wallet_id: walletId,
+              address: existingWallet.address || request.address, // Update with Circle's address
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', request.userId);
+
+          if (dbError) {
+            console.error('⚠️  Failed to update wallet ID in database:', dbError);
+            throw new Error(`Failed to link existing wallet: ${dbError.message}`);
+          }
+
+          console.log(`✅ Successfully linked existing wallet ${walletId} to user`);
+          console.log(`   Wallet Address: ${existingWallet.address}`);
+          return existingWallet;
+        }
+        
+        console.log(`⚠️  No existing wallet found with address ${request.address.substring(0, 10)}...`);
+        console.log(`   Possible reasons:`);
+        console.log(`   1. Wallet is in a different wallet set`);
+        console.log(`   2. Wallet was created with a different API key`);
+        console.log(`   3. Address doesn't match exactly`);
+        console.log(`   4. List wallets API might not be working correctly`);
+        
+        throw new Error(
+          `Wallet with address ${request.address.substring(0, 10)}... not found in Circle.\n` +
+          `If you know the wallet ID, use POST /api/v1/circle/wallet/link with the wallet ID instead.\n` +
+          `If the wallet was created in Circle Console, make sure it's in the same wallet set (${await this.ensureWalletSet()}).`
+        );
+      }
+
+      // Create new wallet
       const walletSetId = await this.ensureWalletSet();
       const idempotencyKey = uuidv4();
 
-      console.log(`📝 Creating wallet in ${this.environment} environment...`);
+      console.log(`📝 Creating new wallet in ${this.environment} environment...`);
       console.log(`   Idempotency Key: ${idempotencyKey}`);
+      console.log(`   Wallet Set ID: ${walletSetId}`);
 
-      console.log('🚀 Calling Circle W3S create wallet endpoint via SDK...');
-      const response = await this.dcWalletClient.createWallets({
+      // Generate fresh ciphertext for this request
+      console.log('🔐 Generating fresh entity secret ciphertext...');
+      const entitySecretCiphertext = await this.generateFreshCiphertext();
+
+      // Make direct API call to create wallet
+      console.log('🚀 Calling Circle W3S create wallet endpoint via direct API...');
+      const walletUrl = `${this.baseUrl}/v1/w3s/developer/wallets`;
+      console.log(`   URL: ${walletUrl}`);
+      console.log(`   Environment: ${this.environment}`);
+      console.log(`   API Key prefix: ${this.apiKey.split(':')[0]}`);
+      console.log(`   Entity Secret Ciphertext length: ${entitySecretCiphertext.length}`);
+      console.log(`   Entity Secret Ciphertext (first 50 chars): ${entitySecretCiphertext.substring(0, 50)}...`);
+      
+      const requestBody = {
         idempotencyKey,
-        walletSetId,
+        accountType: this.walletAccountType,
         blockchains: this.walletBlockchains,
         count: this.walletCount,
+        entitySecretCiphertext,
+        walletSetId,
+      };
+      
+      console.log(`   Request body (without ciphertext):`, {
+        idempotencyKey,
         accountType: this.walletAccountType,
+        blockchains: this.walletBlockchains,
+        count: this.walletCount,
+        walletSetId,
       });
+      
+      const response = await axios.post(
+        walletUrl,
+        requestBody,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
-      const walletsData = response.data;
-      const walletList = walletsData?.wallets || [];
-      const wallet = walletList[0];
-
-      if (!wallet) {
-        console.error('Unexpected wallet creation response:', JSON.stringify(walletsData, null, 2));
-        throw new Error('Wallet not returned from Circle API');
+      // Parse response - Circle returns { data: { wallets: [...] } } structure
+      const responseData = response.data;
+      
+      // Handle both response structures: { wallets: [...] } or { data: { wallets: [...] } }
+      let walletList: any[] = [];
+      if (responseData?.wallets) {
+        // Direct structure: { wallets: [...] }
+        walletList = responseData.wallets;
+      } else if (responseData?.data?.wallets) {
+        // Nested structure: { data: { wallets: [...] } }
+        walletList = responseData.data.wallets;
+      }
+      
+      if (!Array.isArray(walletList) || walletList.length === 0) {
+        console.error('Unexpected wallet creation response:', JSON.stringify(responseData, null, 2));
+        throw new Error('Wallet not returned from Circle API - wallets array is empty or missing');
       }
 
-      console.log('✅ Wallet created:', wallet?.id);
-
-      // Store wallet ID in database
+      const wallet = walletList[0];
       const walletId = wallet?.id;
+
       if (!walletId) {
+        console.error('Wallet object:', JSON.stringify(wallet, null, 2));
         throw new Error('Wallet ID not found in response');
       }
+
+      console.log('✅ Wallet created successfully');
+      console.log(`   Wallet ID: ${walletId}`);
+      console.log(`   Address: ${wallet?.address || 'N/A'}`);
+      console.log(`   Blockchain: ${wallet?.blockchain || 'N/A'}`);
+      console.log(`   State: ${wallet?.state || 'N/A'}`);
+
+      // Store wallet ID in database
 
       const { error: dbError } = await supabase
         .from('users')
@@ -440,18 +836,51 @@ export class CircleService {
       return wallet;
     } catch (error: any) {
       const errorData = error.response?.data || error.message;
+      const errorCode = errorData?.code;
+      const errorMessage = errorData?.message || error.message;
       console.error('❌ Wallet creation failed:', errorData);
+      
+      // Handle ciphertext reuse error (code 156004)
+      if (errorCode === 156004 || errorMessage?.includes('Reusing an entity secret ciphertext')) {
+        console.error('   ⚠️  Error: Entity secret ciphertext was reused');
+        console.error('   💡 The SDK should automatically generate fresh ciphertexts for each request.');
+        console.error('   🔍 This might indicate an SDK issue or caching problem.');
+        console.error('   💡 Try:');
+        console.error('      1. Restart the server to clear any cached state');
+        console.error('      2. Ensure you\'re using the latest SDK version');
+        console.error('      3. Verify the SDK client is properly initialized with entitySecret');
+        throw new Error(
+          `Entity secret ciphertext reuse error (code ${errorCode}).\n` +
+          `The SDK should automatically generate fresh ciphertexts, but this error suggests it may not be working.\n\n` +
+          `Possible solutions:\n` +
+          `1. Restart the server to clear any cached state\n` +
+          `2. Ensure you're using the latest @circle-fin/developer-controlled-wallets SDK\n` +
+          `3. Verify CIRCLE_ENTITY_SECRET is set correctly (unencrypted, 64 hex chars)\n` +
+          `4. Try creating a new SDK client instance for each request\n` +
+          `5. If the issue persists, contact Circle support`
+        );
+      }
       
       // Provide more helpful error messages
       if (error.response?.status === 401) {
+        const errorDetails = error.response?.data || {};
+        console.error('   Full error response:', JSON.stringify(errorDetails, null, 2));
+        console.error('   Request URL:', error.config?.url);
+        console.error('   API Key used:', `${this.apiKey.split(':')[0]}:${this.apiKey.split(':')[1]?.substring(0, 8)}...`);
+        console.error('   Base URL:', this.baseUrl);
+        console.error('   Environment:', this.environment);
+        
         const helpfulMessage = 
-          'Invalid credentials. Please verify:\n' +
-          '1. Your API key is correct (check Circle Console)\n' +
-          '2. Environment matches (TEST_API_KEY for sandbox, LIVE_API_KEY for production)\n' +
-          '3. API key has not been revoked or expired\n' +
-          '4. You copied the entire key including all three parts\n' +
-          '5. CIRCLE_ENTITY_SECRET is set correctly and registered\n' +
-          '6. CIRCLE_WALLET_SET_ID is configured or you created a wallet set via the W3S API';
+          `Invalid credentials (401). Details:\n` +
+          `- URL: ${error.config?.url || 'N/A'}\n` +
+          `- Environment: ${this.environment}\n` +
+          `- API Key prefix: ${this.apiKey.split(':')[0]}\n\n` +
+          `Possible issues:\n` +
+          `1. Entity secret ciphertext doesn't match the registered entity secret\n` +
+          `2. Entity secret was registered with a different API key\n` +
+          `3. Base URL mismatch - TEST_API_KEY should use https://api-sandbox.circle.com\n` +
+          `4. The entity secret in CIRCLE_ENTITY_SECRET doesn't match what was registered\n` +
+          `5. Try regenerating and re-registering the entity secret`;
         throw new Error(`Wallet creation failed: ${error.message}\n${helpfulMessage}`);
       }
       
@@ -509,37 +938,67 @@ export class CircleService {
 
   /**
    * Transfer USDC from Circle wallet to Arc chain
+   * Uses W3S API for developer-controlled wallets
    * Arc is Circle's own blockchain, so it's fully supported!
    */
   async transferToArc(request: TransferToArcRequest): Promise<any> {
     try {
       const idempotencyKey = uuidv4();
 
-      // Arc is Circle's blockchain - use 'ARC' chain identifier
+      console.log('📤 Initiating transfer to Arc chain...');
+      console.log(`   Wallet ID: ${request.walletId}`);
+      console.log(`   Destination: ${request.destinationAddress}`);
+      console.log(`   Amount: ${request.amount} USDC`);
+
+      // Generate fresh ciphertext for authentication
+      const entitySecretCiphertext = await this.generateFreshCiphertext();
+
+      // Use W3S API for developer-controlled wallets
+      // Arc chain identifier: 'ARC' for mainnet, 'ARC-TESTNET' for testnet
+      const blockchain = this.environment === 'sandbox' ? 'ARC-TESTNET' : 'ARC-TESTNET';
+      
+      // Build request according to Circle API reference:
+      // https://developers.circle.com/api-reference/wallets/developer-controlled-wallets/create-developer-transaction-transfer
       const transferRequest: any = {
         idempotencyKey,
-        source: {
-          type: 'wallet',
-          id: request.walletId,
-        },
-        destination: {
-          type: 'blockchain',
-          address: request.destinationAddress,
-          chain: 'ARC', // Arc chain - Circle's native blockchain
-        },
-        amount: {
-          amount: request.amount,
-          currency: 'USD', // USDC
-        },
+        entitySecretCiphertext,
+        walletId: request.walletId, // Required: wallet ID
+        destinationAddress: request.destinationAddress, // Required: destination blockchain address
+        blockchain: blockchain, // Required: blockchain identifier
+        amounts: [request.amount], // Required: array of strings in decimal format
+        feeLevel: 'MEDIUM', // Required: fee level (LOW, MEDIUM, or HIGH) - required when gasPrice/gasLimit not set
+        // For USDC, we may need to specify tokenId or tokenAddress
+        // If not specified, it will transfer native token (if Arc supports it)
+        // For USDC on Arc, we might need to add: tokenId or tokenAddress + tokenBlockchain
       };
 
-      const response = await this.client.transfers.createTransfer(transferRequest);
+      console.log(`   Blockchain: ${blockchain}`);
+      console.log(`   Environment: ${this.environment}`);
+      console.log(`   Amount: ${request.amount} (as array: [${transferRequest.amounts.join(', ')}])`);
 
-      // Handle different response structures
-      const transfer = (response as any).data?.transfer || (response as any).data?.data || response.data;
-      const transferId = transfer?.id || transfer?.transferId;
+      // Use W3S transactions endpoint
+      const url = `${this.baseUrl}/v1/w3s/developer/transactions/transfer`;
       
+      const response = await axios.post(url, transferRequest, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      // Parse response - API returns { data: { id, state } }
+      const responseData = response.data;
+      const transferData = responseData?.data || responseData;
+      const transferId = transferData?.id;
+      const transferState = transferData?.state;
+      
+      if (!transferId) {
+        console.error('Unexpected transfer response:', JSON.stringify(responseData, null, 2));
+        throw new Error('Transfer ID not found in response');
+      }
+
       console.log('✅ Transfer initiated to Arc:', transferId);
+      console.log(`   State: ${transferState || 'INITIATED'}`);
 
       // Log transfer to ledger
       if (request.userId) {
@@ -547,7 +1006,7 @@ export class CircleService {
           transferId: transferId,
           amount: request.amount,
           destination: request.destinationAddress,
-          status: transfer?.status || 'pending',
+          status: transferState || 'INITIATED',
         });
 
         // Start polling for transfer status (in background)
@@ -556,14 +1015,32 @@ export class CircleService {
         });
       }
 
-      return transfer;
+      return {
+        id: transferId,
+        state: transferState || 'INITIATED',
+        ...transferData,
+      };
     } catch (error: any) {
       console.error('❌ Transfer failed:', error.response?.data || error.message);
       
       // Handle specific Circle API errors
       if (error.response?.status === 400) {
         const errorMessage = error.response.data?.message || error.message;
+        const errorCode = error.response.data?.code;
+        console.error(`   Error code: ${errorCode}`);
         throw new Error(`Transfer validation failed: ${errorMessage}`);
+      }
+      
+      if (error.response?.status === 403) {
+        const errorMessage = error.response.data?.message || error.message;
+        const errorCode = error.response.data?.code;
+        console.error(`   Error code: ${errorCode}`);
+        console.error('   Possible issues:');
+        console.error('   1. API key doesn\'t have transfer permissions');
+        console.error('   2. Wallet doesn\'t have sufficient balance');
+        console.error('   3. Wallet is not in the correct state (must be LIVE)');
+        console.error('   4. Entity secret ciphertext is invalid or not registered');
+        throw new Error(`Transfer forbidden (403): ${errorMessage}`);
       }
       
       // Check if transfer failed due to temporary issues - retry if appropriate
@@ -825,43 +1302,83 @@ export class CircleService {
   ): Promise<void> {
     let retries = 0;
     let delay = initialDelay;
+    let consecutive403Errors = 0;
+    const maxConsecutive403Errors = 3; // Stop polling after 3 consecutive 403 errors
 
     while (retries < maxRetries) {
       try {
         await new Promise(resolve => setTimeout(resolve, delay));
 
-        // Get transfer status from Circle
+        // Get transfer status from Circle W3S API
         const transfer = await this.getTransferStatus(transferId);
-        const status = transfer?.status || transfer?.state;
+        // W3S API uses 'state' field, not 'status'
+        const state = transfer?.state || transfer?.status;
 
-        console.log(`📊 Transfer ${transferId} status: ${status} (attempt ${retries + 1})`);
+        console.log(`📊 Transfer ${transferId} state: ${state} (attempt ${retries + 1}/${maxRetries})`);
 
-        // Check if transfer is complete
-        if (status === 'complete' || status === 'completed' || status === 'success') {
+        // Reset 403 error counter on success
+        consecutive403Errors = 0;
+
+        // Check if transfer is complete (W3S uses uppercase states: COMPLETE, COMPLETED, CONFIRMED)
+        // COMPLETE = fully completed, COMPLETED = also completed, CONFIRMED = confirmed on blockchain
+        if (state === 'COMPLETE' || state === 'COMPLETED' || state === 'CONFIRMED' || 
+            state === 'complete' || state === 'completed' || state === 'confirmed' || state === 'success') {
           console.log('✅ Transfer completed:', transferId);
           
           // Update ledger
           await this.updateTransferStatus(transferId, userId, 'completed');
-          return;
+          return; // Stop polling - transfer is done
         }
 
-        // Check if transfer failed
-        if (status === 'failed' || status === 'error') {
-          console.error('❌ Transfer failed:', transferId);
+        // Check if transfer failed (W3S uses uppercase states)
+        if (state === 'FAILED' || state === 'DENIED' || state === 'CANCELLED' || 
+            state === 'failed' || state === 'error' || state === 'denied' || state === 'cancelled') {
+          console.error(`❌ Transfer ${state.toLowerCase()}:`, transferId);
           
           // Update ledger
           await this.updateTransferStatus(transferId, userId, 'failed');
           
           // Optionally retry the transfer
           await this.retryFailedTransfer(transferId, userId, transfer);
-          return;
+          return; // Stop polling - transfer failed
         }
 
         // Exponential backoff: increase delay up to 30 seconds
         delay = Math.min(delay * 1.5, 30000);
         retries++;
       } catch (error: any) {
-        console.error(`⚠️  Error polling transfer ${transferId}:`, error.message);
+        const statusCode = error.response?.status;
+        
+        // Handle 404 errors - transaction might not be immediately available or endpoint doesn't exist
+        if (statusCode === 404) {
+          consecutive403Errors++; // Reuse counter for 404s too
+          if (consecutive403Errors <= 3) {
+            // First few 404s might be normal (transaction not immediately available)
+            console.log(`ℹ️  Transfer ${transferId} not found yet (404) - will retry (attempt ${consecutive403Errors}/3)`);
+          } else {
+            console.error(`❌ Stopping polling for transfer ${transferId} - persistent 404 errors`);
+            console.error('   💡 The transaction status endpoint may not be available for developer-controlled wallets.');
+            console.error('   💡 Transfer was initiated successfully - check status in Circle Console or via webhooks.');
+            return;
+          }
+        }
+        // Handle 403 errors specially - likely means endpoint doesn't exist or auth is wrong
+        else if (statusCode === 403) {
+          consecutive403Errors++;
+          console.error(`⚠️  Error polling transfer ${transferId} (403 Forbidden, ${consecutive403Errors}/${maxConsecutive403Errors}):`, error.message);
+          
+          // Stop polling if we get too many 403 errors (endpoint likely doesn't exist or requires different auth)
+          if (consecutive403Errors >= maxConsecutive403Errors) {
+            console.error(`❌ Stopping polling for transfer ${transferId} - persistent 403 errors suggest endpoint/auth issue`);
+            console.error('   💡 Transfer was initiated successfully, but status polling is not available.');
+            console.error('   💡 Check transfer status manually in Circle Console or via webhooks.');
+            return;
+          }
+        } else {
+          console.error(`⚠️  Error polling transfer ${transferId}:`, error.message);
+          consecutive403Errors = 0; // Reset counter for other errors
+        }
+        
         retries++;
         delay = Math.min(delay * 1.5, 30000);
       }
@@ -871,14 +1388,35 @@ export class CircleService {
   }
 
   /**
-   * Get transfer status from Circle API
+   * Get transfer status from Circle W3S API
+   * Uses the correct endpoint: GET /v1/w3s/transactions/{id}
+   * Reference: https://developers.circle.com/api-reference/wallets/developer-controlled-wallets/get-transaction
    */
   private async getTransferStatus(transferId: string): Promise<any> {
     try {
-      const response = await (this.client.transfers as any).getTransfer(transferId);
-      return (response as any).data?.transfer || (response as any).data?.data || response.data;
+      // Use the correct endpoint: /v1/w3s/transactions/{id} (not /developer/transactions)
+      const url = `${this.baseUrl}/v1/w3s/transactions/${transferId}`;
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      // Parse response - API returns { data: { transaction: { id, state, ... } } }
+      // Reference: https://developers.circle.com/api-reference/wallets/developer-controlled-wallets/get-transaction
+      const responseData = response.data;
+      const transaction = responseData?.data?.transaction || responseData?.transaction || responseData;
+      
+      if (!transaction) {
+        console.error('Unexpected transaction response:', JSON.stringify(responseData, null, 2));
+        throw new Error('Transaction data not found in response');
+      }
+      
+      return transaction;
     } catch (error: any) {
-      console.error('❌ Get transfer status failed:', error.message);
+      console.error('❌ Get transfer status failed:', error.response?.data || error.message);
       throw error;
     }
   }

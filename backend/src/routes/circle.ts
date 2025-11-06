@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { authenticateUser } from '../middleware/auth';
 import CircleService from '../services/circle/circleService';
+import { supabase } from '../db/supabase';
 
 const router = express.Router();
 const circleService = new CircleService();
@@ -33,6 +34,33 @@ router.get('/wallet', authenticateUser, async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/v1/circle/generate-ciphertext
+ * Generate a fresh entity secret ciphertext (for debugging/testing)
+ * 
+ * Note: The SDK should automatically generate fresh ciphertexts for each API request.
+ * This endpoint is mainly for debugging or verification purposes.
+ */
+router.get('/generate-ciphertext', authenticateUser, async (req: Request, res: Response) => {
+  try {
+    const ciphertext = await circleService.generateFreshCiphertext();
+
+    res.json({
+      success: true,
+      ciphertext,
+      length: ciphertext.length,
+      message: 'Fresh ciphertext generated. Each API request should use a new ciphertext.',
+      warning: '⚠️  This ciphertext should only be used once!',
+    });
+  } catch (error: any) {
+    console.error('Generate ciphertext error:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to generate ciphertext',
+    });
+  }
+});
+
+/**
  * GET /api/v1/circle/public-key
  * Get Circle entity public key (useful for verifying SDK connection and entity secret registration)
  * 
@@ -43,7 +71,7 @@ router.get('/wallet', authenticateUser, async (req: Request, res: Response) => {
  */
 router.get('/public-key', authenticateUser, async (req: Request, res: Response) => {
   try {
-    const result = await circleService.getPublicKey();
+    const result = await circleService.getPublicKeyForAPI();
 
     res.json({
       success: true,
@@ -149,16 +177,8 @@ router.post('/wallet/create', authenticateUser, async (req: Request, res: Respon
   try {
     const userId = (req as any).user.id;
     const userEmail = (req as any).user.email;
-    const address = req.body.address || (req as any).user.address;
 
     console.log(`📝 Wallet creation request - User ID: ${userId}, Email: ${userEmail}`);
-
-    if (!address) {
-      return res.status(400).json({
-        success: false,
-        error: 'Address is required',
-      });
-    }
 
     if (!userId) {
       return res.status(401).json({
@@ -167,10 +187,47 @@ router.post('/wallet/create', authenticateUser, async (req: Request, res: Respon
       });
     }
 
+    // Get user's address from database (if they provided one during signup)
+    const { data: userData } = await supabase
+      .from('users')
+      .select('address')
+      .eq('id', userId)
+      .single();
+
+    // Priority: Request body address > Database address
+    // This allows users to explicitly pass an address to link an existing wallet
+    const addressToUse = req.body.address || userData?.address;
+    
+    if (addressToUse) {
+      console.log(`📝 Address provided: ${addressToUse.substring(0, 10)}...`);
+      console.log(`   Will search for existing wallet with this address first`);
+    }
+
+    // Create wallet or link existing wallet
+    // If address is provided, we'll check if a wallet with that address already exists in Circle
+    // If it exists, we'll link it; otherwise, Circle will generate a new wallet
     const wallet = await circleService.createWallet({
       userId,
-      address,
+      address: addressToUse,
     });
+    
+    // Update user record with the Circle wallet address
+    if (wallet?.address) {
+      try {
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ address: wallet.address })
+          .eq('id', userId);
+        
+        if (updateError) {
+          console.warn('⚠️  Failed to update user address with Circle wallet address:', updateError);
+        } else {
+          console.log('✅ Updated user address with Circle wallet address');
+        }
+      } catch (updateErr) {
+        console.warn('⚠️  Error updating user address:', updateErr);
+      }
+    }
 
     res.json({
       success: true,
@@ -184,6 +241,69 @@ router.post('/wallet/create', authenticateUser, async (req: Request, res: Respon
     res.status(400).json({
       success: false,
       error: error.message || 'Failed to create wallet',
+    });
+  }
+});
+
+/**
+ * POST /api/v1/circle/wallet/link
+ * Link an existing Circle wallet to the user by wallet ID
+ * Useful when you know the wallet ID from Circle Console
+ */
+router.post('/wallet/link', authenticateUser, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const { walletId } = req.body;
+
+    if (!walletId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Wallet ID is required',
+      });
+    }
+
+    // Verify the wallet exists in Circle
+    const wallet = await circleService.getWallet(walletId);
+
+    if (!wallet) {
+      return res.status(404).json({
+        success: false,
+        error: 'Wallet not found in Circle',
+      });
+    }
+
+    // Update database with wallet ID
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ 
+        circle_wallet_id: walletId,
+        address: wallet.address || undefined, // Update address if available
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (updateError) {
+      console.error('⚠️  Failed to link wallet:', updateError);
+      return res.status(400).json({
+        success: false,
+        error: `Failed to link wallet: ${updateError.message}`,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Wallet linked successfully',
+      wallet: {
+        id: wallet.id || walletId,
+        address: wallet.address,
+        state: wallet.state,
+      },
+    });
+  } catch (error: any) {
+    console.error('Link wallet error:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to link wallet',
     });
   }
 });

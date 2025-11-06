@@ -37,19 +37,30 @@ router.post('/signup', async (req: Request, res: Response) => {
       return res.status(400).json({ error: error.message });
     }
 
-    // Create user record in your users table (if address provided)
-    if (data.user && address) {
-      // Basic address validation (Ethereum/EVM format: 0x + 40 hex chars)
-      if (!address.startsWith('0x') || address.length !== 42) {
-        console.warn('⚠️  Invalid address format, but continuing with signup');
+    // Create user record in your users table
+    // Note: address is optional - Circle will generate a wallet address when creating a wallet
+    if (data.user) {
+      const userData: any = {
+        id: data.user.id, // Use Supabase auth user ID
+      };
+      
+      // Only add address if provided (optional - for users with existing wallets)
+      if (address) {
+        // Basic address validation (Ethereum/EVM format: 0x + 40 hex chars)
+        if (!address.startsWith('0x') || address.length !== 42) {
+          console.warn('⚠️  Invalid address format, but continuing with signup');
+        }
+        userData.address = address;
+      } else {
+        // Use a placeholder or null - Circle will generate the actual wallet address
+        // The address field will be updated when Circle wallet is created
+        userData.address = null; // Or generate a temporary placeholder
+        console.log('ℹ️  No address provided - Circle will generate wallet address when wallet is created');
       }
       
       await supabase
         .from('users')
-        .insert({
-          id: data.user.id, // Use Supabase auth user ID
-          address,
-        });
+        .insert(userData);
     }
 
     res.json({
