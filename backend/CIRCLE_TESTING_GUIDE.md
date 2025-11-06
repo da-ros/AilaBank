@@ -315,39 +315,130 @@ Use Circle's console faucets or transfers instead.
 
 ### Step 8: Transfer to Arc Chain
 
+**Prerequisites**:
+- ✅ User must have a Circle wallet created (Step 4)
+- ✅ Wallet must have sufficient USDC balance
+- ✅ Destination address must be a valid Arc chain address (42 characters, starts with `0x`)
+
+**Get your wallet balance first** (to verify you have funds):
+```bash
+curl -X GET http://localhost:3000/api/v1/circle/wallet/balance \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Initiate Transfer**:
 ```bash
 curl -X POST http://localhost:3000/api/v1/circle/transfer/arc \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "destinationAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-    "amount": "10.00"
+    "amount": "1.00"
   }'
 ```
 
-**Expected Response**:
+**Expected Success Response** (200 OK):
 ```json
 {
   "success": true,
   "transfer": {
-    "id": "transfer-id-123",
-    "status": "pending",
-    "amount": "10.00",
+    "id": "c4d1da72-111e-4d52-bdbf-2e74a2d803d5",
+    "status": "INITIATED",
+    "amount": "1.00",
     "destination": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
   }
 }
 ```
 
+**Transfer States** (from Circle API):
+- `INITIATED` - Transfer request received
+- `QUEUED` - Transfer queued for processing
+- `SENT` - Transfer sent to blockchain
+- `CONFIRMED` - Transfer confirmed on blockchain
+- `COMPLETED` - Transfer fully completed
+- `FAILED` - Transfer failed
+- `DENIED` - Transfer denied
+- `CANCELLED` - Transfer cancelled
+
 **What happens**:
-- Initiates transfer from Circle wallet to Arc chain
-- Creates ledger entry in Supabase
-- Starts background polling for transfer status
-- Updates ledger when transfer completes
+1. ✅ Validates wallet exists and user is authenticated
+2. ✅ Creates transfer transaction via Circle W3S API
+3. ✅ Logs transfer to Supabase ledger
+4. ✅ Starts background polling for transfer status (up to 30 attempts)
+5. ✅ Updates ledger when transfer state changes
+
+**Error Responses**:
+
+**400 Bad Request** - Missing or invalid parameters:
+```json
+{
+  "success": false,
+  "error": "destinationAddress and amount are required"
+}
+```
+
+**400 Bad Request** - Insufficient balance:
+```json
+{
+  "success": false,
+  "error": "Transfer validation failed: Insufficient balance"
+}
+```
+
+**403 Forbidden** - Common causes:
+```json
+{
+  "success": false,
+  "error": "Transfer forbidden (403): Invalid credentials"
+}
+```
+
+**Possible 403 causes**:
+- API key doesn't have transfer permissions
+- Wallet doesn't have sufficient balance
+- Wallet is not in `LIVE` state
+- Entity secret ciphertext is invalid or not registered
+
+**Verify Transfer Status**:
+
+Check server logs for polling updates:
+```bash
+# Watch server logs for transfer status updates
+# You should see messages like:
+# ✅ Transfer status: QUEUED
+# ✅ Transfer status: SENT
+# ✅ Transfer status: CONFIRMED
+# ✅ Transfer status: COMPLETED
+```
+
+**Check Transfer in Circle Console**:
+1. Go to Circle Developer Console → **Transactions**
+2. Find your transfer by ID (from response)
+3. View detailed status and blockchain transaction hash
+
+**Troubleshooting**:
+
+**Issue**: Transfer stuck in `INITIATED` state
+- **Solution**: Check Circle Console for any errors or pending approvals
+
+**Issue**: Transfer fails with `403 Forbidden`
+- **Solution**: 
+  1. Verify API key has Developer Services permissions
+  2. Check wallet state is `LIVE` (not `PENDING` or `FAILED`)
+  3. Ensure entity secret is registered with this API key
+  4. Verify wallet has sufficient balance
+
+**Issue**: Transfer fails with `400 Bad Request`
+- **Solution**:
+  1. Verify destination address is valid (42 chars, starts with `0x`)
+  2. Check amount format (decimal string, e.g., `"1.00"`)
+  3. Ensure wallet exists and is linked to user
 
 **Note**: 
-- Transfer will be polled automatically (up to 30 attempts)
-- If transfer fails, it will retry automatically (up to 3 times)
-- Check logs to see polling status updates
+- Transfers are automatically polled in the background (up to 30 attempts with exponential backoff)
+- Failed transfers can be retried automatically (up to 3 times)
+- Check server logs for detailed polling status updates
+- For sandbox, use `ARC-TESTNET` addresses; for production, use `ARC` addresses
 
 ---
 
