@@ -11,6 +11,13 @@ import { initializeDatabase } from './db/supabase';
 import intentRoutes from './routes/intent';
 import authRoutes from './routes/auth';
 import circleRoutes from './routes/circle';
+import quotesRoutes from './routes/quotes';
+import routesRoutes from './routes/routes';
+import receiptsRoutes from './routes/receipts';
+import ledgerRoutes from './routes/ledger';
+import merchantRoutes from './routes/merchant';
+import treasuryRoutes from './routes/treasury';
+import publicRoutes from './routes/public';
 import { redis } from './services/redis/redisClient';
 
 const app = express();
@@ -39,6 +46,13 @@ app.get('/health', (req, res) => {
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/circle', circleRoutes);
 app.use('/api/v1', intentRoutes);
+app.use('/api/v1', quotesRoutes);
+app.use('/api/v1', routesRoutes);
+app.use('/api/v1', receiptsRoutes);
+app.use('/api/v1', ledgerRoutes);
+app.use('/api/v1', merchantRoutes);
+app.use('/api/v1', treasuryRoutes);
+app.use('/api/v1', publicRoutes);
 
 // Initialize database and Redis on startup
 async function startServer() {
@@ -79,6 +93,14 @@ async function startServer() {
       console.log(`🔐 Auth API:     http://localhost:${PORT}/api/v1/auth`);
       console.log(`💳 Circle API:   http://localhost:${PORT}/api/v1/circle`);
       console.log(`🎤 Intent API:   http://localhost:${PORT}/api/v1/intent`);
+      console.log(`💱 Quotes API:   http://localhost:${PORT}/api/v1/quotes`);
+      console.log(`🛣️  Routes API:   http://localhost:${PORT}/api/v1/route`);
+      console.log(`📋 Receipts API:  http://localhost:${PORT}/api/v1/receipts`);
+      console.log(`📊 Ledger API:    http://localhost:${PORT}/api/v1/ledger`);
+      console.log(`🏪 Merchant API:  http://localhost:${PORT}/api/v1/merchant`);
+      console.log(`💰 Treasury API:  http://localhost:${PORT}/api/v1/treasury`);
+      console.log(`🔄 RateSweep API: http://localhost:${PORT}/api/v1/ratesweep`);
+      console.log(`🌐 Public API:    http://localhost:${PORT}/api/v1/public`);
       console.log(`🔊 Audio files:  http://localhost:${PORT}/audio/`);
       console.log('═══════════════════════════════════════════════════\n');
     });

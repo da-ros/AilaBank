@@ -27,6 +27,8 @@
   "dependencies": {
     "@circle-fin/circle-sdk": "^2.9.0",
     "@circle-fin/developer-controlled-wallets": "^9.2.1",
+    "@langchain/core": "^1.0.3",
+    "@langchain/openai": "^1.0.0",
     "@supabase/supabase-js": "^2.78.0",
     "@types/multer": "^2.0.0",
     "@types/uuid": "^10.0.0",
@@ -37,6 +39,7 @@
     "ethers": "^6.15.0",
     "express": "^5.1.0",
     "ioredis": "^5.8.2",
+    "langchain": "^1.0.3",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "openai": "^6.7.0",

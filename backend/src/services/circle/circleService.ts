@@ -1230,16 +1230,43 @@ export class CircleService {
             .single();
 
           if (user && !userError) {
-            // Create deposit ledger entry
-            await supabase.from('ledger').insert({
-              user_id: user.id,
-              action_type: 'deposit',
-              amount: payment?.amount?.amount || '0',
-              currency: payment?.amount?.currency || 'USDC',
-              tx_hash: paymentId,
-              status: 'completed',
-              created_at: new Date().toISOString(),
-            });
+            // Create deposit ledger entry using double-entry accounting
+            const { getLedgerService } = await import('../ledger/ledgerService');
+            const ledgerService = getLedgerService();
+            
+            const amount = parseFloat(payment?.amount?.amount || '0');
+            
+            // Double-entry: debit external, credit wallet
+            await ledgerService.createDoubleEntry(
+              user.id,
+              'deposit',
+              'external', // Debit: money from external source
+              'wallet',   // Credit: money enters wallet
+              amount,
+              payment?.amount?.currency || 'USDC',
+              `Deposit from ${payment?.source?.type || 'external source'}`,
+              {
+                paymentId,
+                source: payment?.source,
+              }
+            );
+
+            // Also create single entry with transaction hash
+            await ledgerService.createEntry(
+              user.id,
+              'deposit',
+              'credit',
+              amount,
+              payment?.amount?.currency || 'USDC',
+              'wallet',
+              `Deposit: ${amount} ${payment?.amount?.currency || 'USDC'}`,
+              undefined,
+              paymentId,
+              {
+                paymentId,
+                status: 'completed',
+              }
+            );
 
             console.log('✅ Deposit logged for user:', user.id);
           }
@@ -1260,23 +1287,45 @@ export class CircleService {
   }
 
   /**
-   * Log transfer to ledger
+   * Log transfer to ledger (using double-entry accounting)
    */
   private async logTransfer(userId: string, transferData: any): Promise<void> {
     try {
-      const { error } = await supabase.from('ledger').insert({
-        user_id: userId,
-        action_type: 'withdraw',
-        amount: transferData.amount,
-        currency: 'USDC',
-        tx_hash: transferData.transferId,
-        status: transferData.status,
-        created_at: new Date().toISOString(),
-      });
+      const { getLedgerService } = await import('../ledger/ledgerService');
+      const ledgerService = getLedgerService();
 
-      if (error) {
-        console.error('⚠️  Failed to log transfer:', error);
-      }
+      // Create double-entry: debit wallet, credit external (withdrawal)
+      await ledgerService.createDoubleEntry(
+        userId,
+        'withdraw',
+        'wallet', // Debit: money leaves wallet
+        'external', // Credit: money goes to external address
+        parseFloat(transferData.amount),
+        'USDC',
+        `Transfer to ${transferData.destination || 'external address'}`,
+        {
+          transferId: transferData.transferId,
+          destination: transferData.destination,
+          routeId: transferData.routeId,
+        }
+      );
+
+      // Also create a single entry with transaction hash for tracking
+      await ledgerService.createEntry(
+        userId,
+        'withdraw',
+        'debit',
+        parseFloat(transferData.amount),
+        'USDC',
+        'wallet',
+        `Withdrawal: ${transferData.amount} USDC`,
+        transferData.destination,
+        transferData.transferId,
+        {
+          transferId: transferData.transferId,
+          status: transferData.status,
+        }
+      );
     } catch (error: any) {
       console.error('❌ Log transfer failed:', error.message);
     }
