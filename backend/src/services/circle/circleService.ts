@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import axios from 'axios';
 import { supabase } from '../../db/supabase';
+import { getLedgerService } from '../ledger/ledgerService';
 
 /**
  * Circle Service
@@ -1055,12 +1056,41 @@ export class CircleService {
 
   /**
    * Create deposit address for user wallet
-   * Returns an address where users can send USDC to deposit into their wallet
-   * Note: Circle SDK may use different method name - check actual API
+   * For developer-controlled wallets, the wallet's address IS the deposit address
+   * There's no separate "deposit address" - users send funds directly to the wallet address
    */
   async createDepositAddress(walletId: string): Promise<any> {
-    console.warn('⚠️  Deposit address creation is not yet implemented for W3S developer-controlled wallets');
-    throw new Error('Deposit address creation is not supported for developer-controlled wallets in this build');
+    try {
+      // Get the wallet to retrieve its address
+      const wallet = await this.getWallet(walletId);
+      
+      if (!wallet) {
+        throw new Error('Wallet not found');
+      }
+
+      const walletAddress = wallet.address;
+      const blockchain = wallet.blockchain || 'ETH-SEPOLIA'; // Default to ETH-SEPOLIA for sandbox
+
+      if (!walletAddress) {
+        throw new Error('Wallet address not found - wallet may not be fully initialized');
+      }
+
+      console.log(`✅ Deposit address retrieved for wallet ${walletId}`);
+      console.log(`   Address: ${walletAddress}`);
+      console.log(`   Blockchain: ${blockchain}`);
+
+      // Extract chain name from blockchain (e.g., "ETH-SEPOLIA" -> "ETH")
+      const chain = blockchain.split('-')[0] || 'ETH';
+
+      return {
+        address: walletAddress,
+        chain: chain,
+        blockchain: blockchain,
+      };
+    } catch (error: any) {
+      console.error('❌ Failed to get deposit address:', error.message);
+      throw new Error(`Failed to get deposit address: ${error.message}`);
+    }
   }
 
   /**
@@ -1231,7 +1261,6 @@ export class CircleService {
 
           if (user && !userError) {
             // Create deposit ledger entry using double-entry accounting
-            const { getLedgerService } = await import('../ledger/ledgerService');
             const ledgerService = getLedgerService();
             
             const amount = parseFloat(payment?.amount?.amount || '0');
@@ -1291,7 +1320,6 @@ export class CircleService {
    */
   private async logTransfer(userId: string, transferData: any): Promise<void> {
     try {
-      const { getLedgerService } = await import('../ledger/ledgerService');
       const ledgerService = getLedgerService();
 
       // Create double-entry: debit wallet, credit external (withdrawal)
@@ -1434,6 +1462,41 @@ export class CircleService {
     }
 
     console.warn(`⚠️  Transfer ${transferId} polling timeout after ${maxRetries} attempts`);
+  }
+
+  /**
+   * Get wallet transactions from Circle W3S API
+   * Uses the endpoint: GET /v1/w3s/transactions (with wallet filter)
+   * Reference: https://developers.circle.com/api-reference/wallets/developer-controlled-wallets/list-transactions
+   */
+  async getWalletTransactions(walletId: string, limit: number = 50): Promise<any[]> {
+    try {
+      // Circle W3S API uses /v1/w3s/transactions with query params
+      const url = `${this.baseUrl}/v1/w3s/transactions`;
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        params: {
+          walletId: walletId,
+          limit: limit || 50,
+        },
+      });
+
+      // Parse response - API returns { data: { transactions: [...] } }
+      const responseData = response.data;
+      const transactions = responseData?.data?.transactions || responseData?.transactions || [];
+      
+      console.log(`📊 Found ${transactions.length} Circle transactions for wallet ${walletId}`);
+      return Array.isArray(transactions) ? transactions : [];
+    } catch (error: any) {
+      console.error('❌ Get wallet transactions failed:', error.response?.data || error.message);
+      // Don't throw - return empty array if transactions endpoint is not available
+      // This is common if the endpoint requires different permissions or doesn't exist yet
+      return [];
+    }
   }
 
   /**
