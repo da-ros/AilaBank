@@ -16,12 +16,16 @@ router.get('/wallet', authenticateUser, async (req: Request, res: Response) => {
 
     const wallet = await circleService.getWalletByUserId(userId);
 
+    // Normalize wallet state - Circle returns "LIVE" but we want "active"
+    const rawState = wallet?.state || wallet?.status || '';
+    const normalizedState = rawState.toLowerCase() === 'live' ? 'active' : rawState.toLowerCase();
+
     res.json({
       success: true,
       wallet: {
         id: wallet?.id || wallet?.walletId,
         balances: wallet?.balances || [],
-        state: wallet?.state || wallet?.status,
+        state: normalizedState || 'active', // Default to active if not found
       },
     });
   } catch (error: any) {
@@ -329,6 +333,41 @@ router.get('/wallet/balance', authenticateUser, async (req: Request, res: Respon
     res.status(404).json({
       success: false,
       error: error.message || 'Failed to get balance',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/circle/wallet/transactions
+ * Get wallet transaction history from Circle
+ */
+router.get('/wallet/transactions', authenticateUser, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    const wallet = await circleService.getWalletByUserId(userId);
+    const walletId = wallet?.id || wallet?.walletId;
+    
+    if (!walletId) {
+      return res.status(404).json({
+        success: false,
+        error: 'Wallet not found',
+      });
+    }
+
+    const transactions = await circleService.getWalletTransactions(walletId, limit);
+
+    res.json({
+      success: true,
+      transactions,
+      count: transactions.length,
+    });
+  } catch (error: any) {
+    console.error('Get transactions error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get transactions',
     });
   }
 });

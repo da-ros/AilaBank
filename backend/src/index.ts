@@ -24,13 +24,62 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: '*', // Allow all origins in development
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
 // Serve static files (audio responses)
-app.use('/audio', express.static(path.join(__dirname, '../../public/audio')));
+// Files are saved to backend/public/audio by elevenLabs service
+// When running with ts-node, __dirname is backend/src
+// So ../public/audio = backend/public/audio (one level up from src)
+// When compiled, __dirname is backend/dist
+// So ../public/audio = backend/public/audio (one level up from dist)
+const audioDir = path.join(__dirname, '../public/audio');
+console.log(`🔊 Serving audio files from: ${audioDir}`);
+console.log(`🔊 __dirname: ${__dirname}`);
+if (!require('fs').existsSync(audioDir)) {
+  require('fs').mkdirSync(audioDir, { recursive: true });
+  console.log(`📁 Created audio directory: ${audioDir}`);
+}
+// Serve audio files with proper CORS headers and content type
+app.use('/audio', (req, res, next) => {
+  // Set CORS headers explicitly
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  
+  // Log audio requests for debugging
+  const filename = req.path.replace('/', '');
+  const filePath = path.join(audioDir, filename);
+  console.log(`🔊 Audio request: ${req.path} -> ${filePath}`);
+  console.log(`🔊 File exists: ${require('fs').existsSync(filePath)}`);
+  
+  next();
+}, express.static(audioDir, {
+  setHeaders: (res, filePath) => {
+    // Set proper content type for MP3 files
+    if (filePath.endsWith('.mp3')) {
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Accept-Ranges', 'bytes');
+    }
+  },
+  // Enable range requests for audio streaming
+  dotfiles: 'ignore',
+  etag: true,
+  lastModified: true
+}));
 
 // Health check endpoint
 app.get('/health', (req, res) => {

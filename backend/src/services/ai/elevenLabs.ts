@@ -110,21 +110,39 @@ export class ElevenLabsService {
     const filename = `audio_${userId}_${Date.now()}.mp3`;
     
     // Use public directory relative to project root
+    // When running with ts-node, __dirname is backend/src/services/ai
+    // So ../../../public/audio = backend/public/audio
+    // When compiled, __dirname is backend/dist/services/ai
+    // So ../../../public/audio = backend/public/audio (same)
     const publicDir = path.join(__dirname, '../../../public/audio');
     if (!fs.existsSync(publicDir)) {
       fs.mkdirSync(publicDir, { recursive: true });
+      console.log(`📁 Created audio directory: ${publicDir}`);
     }
     
     const outputPath = path.join(publicDir, filename);
+    console.log(`💾 Saving audio to: ${outputPath}`);
+    console.log(`📂 Public dir: ${publicDir}`);
+    console.log(`📂 __dirname: ${__dirname}`);
 
     try {
       await this.textToSpeechFile(text, outputPath);
       
+      // Verify file was created
+      if (fs.existsSync(outputPath)) {
+        const stats = fs.statSync(outputPath);
+        console.log(`✅ Audio file created: ${filename} (${(stats.size / 1024).toFixed(2)} KB)`);
+      } else {
+        console.error(`❌ Audio file not found after creation: ${outputPath}`);
+      }
+      
       // Return URL for frontend to fetch
-      // In production, this would be a full URL like: https://api.ailabank.com/audio/filename.mp3
-      return `/audio/${filename}`;
+      // The backend serves static files at /audio, so return /audio/filename
+      const audioUrl = `/audio/${filename}`;
+      console.log(`🔊 Audio URL returned: ${audioUrl}`);
+      return audioUrl;
     } catch (error: any) {
-      console.error('Error generating audio response:', error);
+      console.error('❌ Error generating audio response:', error);
       // Return empty string if TTS fails - frontend can handle gracefully
       return '';
     }
