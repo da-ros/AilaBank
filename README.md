@@ -288,8 +288,8 @@ AilaBank reimagines banking for the digital age by combining:
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd Aila
+git clone https://github.com/da-ros/AilaBank.git
+cd AilaBank
 
 # Install backend dependencies
 cd backend
@@ -505,7 +505,7 @@ For detailed API documentation, see `backend/API_KEYS_SETUP.md` and route files 
 ### Project Structure
 
 ```
-Aila/
+AilaBank/
 ├── frontend/          # React PWA frontend
 │   ├── src/
 │   │   ├── components/    # UI components
