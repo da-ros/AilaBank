@@ -7,6 +7,8 @@
 [![React](https://img.shields.io/badge/React-18.3-blue.svg)](https://reactjs.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 
+**See demo and full case study:** [pedrorodas.com/projects](https://www.pedrorodas.com/#projects)
+
 ---
 
 ## 📋 Table of Contents
@@ -26,6 +28,8 @@
 ---
 
 ## 🎯 Project Overview
+
+See demo and full case study: [pedrorodas.com/projects](https://www.pedrorodas.com/#projects)
 
 ### Vision
 
@@ -103,69 +107,7 @@ AilaBank reimagines banking for the digital age by combining:
 
 ### System Overview
 
-```
-┌────────────────────────────────────────────────────────────────────────┐ 
-│                        USER INTERACTION LAYER                          │
-│                                                                        │
-│  ┌──────────────┐     ┌──────────────┐     ┌──────────────────┐        │
-│  │   🎤 Voice   │     │   💬 Chat    │     │   📊 Dashboard    │        │
-│  │  Interface   │     │  (Text/UX)   │     │   (React PWA)    │        │
-│  └──────┬───────┘     └──────┬───────┘     └─────────┬────────┘        │
-│         │                    │                       │                 │
-│         └────────────────────┴───────────────────────┘                 │
-└──────────────────────────────┼─────────────────────────────────────────┘
-                               │
-                               ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        AI INTELLIGENCE LAYER                           │
-│                                                                        │
-│  ┌──────────────────────────────────────────────────────────────┐      │
-│  │ Intent Recognition (OpenAI GPT-5-nano)                       │      │
-│  │ Policy Decision (LangChain + OpenAI)                         │      │
-│  │ Speech-to-Text (Cloudflare Workers AI)                       │      │
-│  │ Text-to-Speech (ElevenLabs)                                  │      │
-│  └──────────────────────────────┬───────────────────────────────┘      │
-│                                 │                                      │
-│  ┌──────────────────────────────┴───────────────────────────────┐      │
-│  │ Backend API: /api/v1/intent (Streaming SSE)                  │      │
-│  └──────────────────────────────┬───────────────────────────────┘      │
-└──────────────────────────────────┼─────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                    APPLICATION ORCHESTRATION LAYER                     │
-│                                                                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────┐    │
-│  │ Auth Service │  │ FX Converter │  │ Yield Engine │  │  Circle  │    │
-│  │              │  │              │  │              │  │   API    │    │
-│  │ • JWT        │  │ • EUR→USDC   │  │ • Allocate   │  │ • Wallet │    │
-│  │ • Supabase   │  │ • Best route │  │ • Rebalance  │  │ • Transfers   │
-│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────┘    │
-│                                                                        │
-│  ┌──────────────────────────────────────────────────────────────┐      │
-│  │ Event Bus (Redis): Transaction queues for reliable delivery  │      │
-│  │ • deposit.confirmed → Trigger allocation                     │      │
-│  │ • allocation.done → Update UI                                │      │
-│  └──────────────────────────────┬───────────────────────────────┘      │
-└──────────────────────────────────┼─────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                      BLOCKCHAIN & SMART CONTRACTS                      │
-│                                                                        │
-│  ┌─────────────────────────────────────────────────────────────┐       │
-│  │                  ARC (EVM-Compatible L1)                    │       │
-│  │  Native Gas: USDC  |  Chain ID: 91002 (testnet)             │       │
-│  │                                                             │       │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │       │
-│  │  │ AilaVault    │  │ Liquidity    │  │ Yield        │       │       │
-│  │  │              │  │ Buffer       │  │ Allocator    │       │       │
-│  │  │ • Balances   │  │ • 20% buffer │  │ • Allocations│       │       │
-│  │  │ • Yield      │  │ • Instant WD │  │ • Harvesting │       │       │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘       │       │
-│  └─────────────────────────────────────────────────────────────┘       │
-└────────────────────────────────────────────────────────────────────────┘
-```
+![AilaBank system architecture](./Aila-architecture.png)
 
 ### Component Architecture
 
@@ -220,6 +162,38 @@ AilaBank reimagines banking for the digital age by combining:
 - `AilaVault.sol`: Main vault for user deposits
 - `LiquidityBuffer.sol`: Instant withdrawal buffer
 - `YieldAllocator.sol`: Yield optimization engine
+
+### Strategic Value Curve
+
+![Strategic Value Curve – AilaBank vs incumbent digital banks](./Strategic-Value-Curve.png)
+
+Compared to incumbent digital banks (Nubank, Revolut, Stripe), AilaBank deliberately **lowers** what incumbents over-invest in —onboarding friction, marketing glamour, and physical infrastructure— while **raising** factors where stablecoins, voice AI, and on-chain rails create a different value profile.
+
+**What the curve implies**
+
+| Factor | Incumbents | AilaBank | Design choice |
+|--------|:----------:|:--------:|---------------|
+| Onboarding complexity | 6 | 2 | Lightweight auth + digital wallet setup (Circle), no branch/card stack |
+| Marketing / brand glamour | 8 | 2 | Utility-first UX; public KPI dashboard over prestige branding |
+| Physical infrastructure | 8 | 1 | Fully digital; Arc + APIs instead of branches and card networks |
+| Currency flexibility & global interoperability | 3 / 3 | 10 / 9 | USDC core, corridor routing, cross-border transfer flows |
+| Inflation protection & yield | 1 / 3 | 10 / 8 | Stablecoin store-of-value + RateSweep / treasury policy agent |
+| Financial intelligence (AI) | 2 | 10 | Voice intent pipeline, policy reasoning, conversational banking |
+| Transparency & liquidity | 5 / 6 | 10 / 10 | Ledger + Circle history, public dashboard, on-chain contracts |
+| Regulatory trust | 8 | 8 | Matched baseline; prototype uses testnet and clear safety boundaries |
+
+**Why this implementation**
+
+The architecture above is not a generic neobank clone —it is shaped to **eliminate** branch/card overhead and **create** new curves: voice-first orchestration (`/api/v1/intent`), programmable USDC on Arc, proof-oriented routing and receipts, and treasury automation (vault, liquidity buffer, yield allocator). Incumbents optimize for brand and fiat rails; AilaBank optimizes for **speed, AI assistance, stablecoin flexibility, and verifiable execution**.
+
+**Objectives aligned with the curve**
+
+- **Cross-border payments** → raise currency flexibility and global interoperability without correspondent-bank drag.
+- **Store of value + yield** → raise inflation protection and yield availability while keeping liquidity at 10 via buffers and instant USDC access.
+- **Voice + agents** → raise financial intelligence where incumbents remain at 2.
+- **Public dashboard + on-chain artifacts** → raise transparency without matching incumbent marketing spend.
+
+Success is measured on the **raised** factors (cost, speed, effective MDR, uptime) while accepting lower scores on glamour and physical presence—by design.
 
 ### Data Flow
 
@@ -719,3 +693,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **Built with ❤️ for the future of banking, in NYC.**
+
+---
+
+## ⚠️ Safety Note
+
+This is a prototype / testnet-oriented system. It is not financial advice, not a bank, and not production-ready for real-money custody.
